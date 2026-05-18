@@ -7,12 +7,12 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
 import os
-import topic
+import analysis
 
 plt.switch_backend('Agg')
 
-def generate_plot(timestamps, values, emotion_name, color):
 
+def generate_plot(timestamps, values, emotion_name, color):
     if not timestamps:
         return None
 
@@ -22,26 +22,27 @@ def generate_plot(timestamps, values, emotion_name, color):
 
     plt.figure(figsize=(10, 5))
     plt.plot(times, scores, marker='o', linestyle='-', color=color, linewidth=2)
-    
+
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     plt.gcf().autofmt_xdate()
-    
+
     plt.title(f"{emotion_name.capitalize()} Evolution (Last 24h)")
     plt.xlabel("Time")
     plt.ylabel("Intensity (0-1)")
     plt.grid(True, linestyle='--', alpha=0.6)
-    
+
     filename = f"plot_{emotion_name}.png"
     plt.savefig(filename)
     plt.close()
     return filename
 
+
 async def send_report(bot):
     print("[REPORTER] Generating report and plots...")
 
     try:
-        with open('sentiment.json', 'r', encoding='utf-8') as sntm:
-            sentiment = json.load(sntm)
+        with open('sentiment.json', 'r', encoding='utf-8') as f:
+            sentiment = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         print("[REPORTER] Error loading sentiment.json")
         return
@@ -54,7 +55,7 @@ async def send_report(bot):
         'pos': 0, 'neg': 0, 'hateful': 0, 'stereotype': 0,
         'joy': 0, 'sadness': 0, 'anger': 0, 'fear': 0
     }
-    
+
     plot_data = {
         'joy': [], 'sadness': [], 'anger': [], 'fear': [], 'times': []
     }
@@ -64,14 +65,13 @@ async def send_report(bot):
     }
 
     for msg in sentiment:
- 
         try:
             dt = datetime.fromisoformat(msg['date'])
         except ValueError:
             dt = datetime.now()
 
         plot_data['times'].append(dt)
-        
+
         s_probs = msg['sentiment_probas']
         h_probs = msg['hate_probas']
         e_probs = msg['emotion_probas']
@@ -80,7 +80,7 @@ async def send_report(bot):
         sums['neg'] += s_probs['neg']
         sums['hateful'] += h_probs['hateful']
         sums['stereotype'] += h_probs['stereotype']
-        
+
         sums['joy'] += e_probs['joy']
         sums['sadness'] += e_probs['sadness']
         sums['anger'] += e_probs['anger']
@@ -96,16 +96,9 @@ async def send_report(bot):
             ('anger', e_probs['anger']), ('fear', e_probs['fear']),
             ('pos', s_probs['pos']), ('neg', s_probs['neg'])
         ]
-        
-        raw_text = msg['text']
 
-        raw_text = raw_text.replace('\n', ' ')
-        
-        if len(raw_text) > 150:
-            display_text = raw_text[:150] + "..."
-        else:
-            display_text = raw_text
-            
+        raw_text = msg['text'].replace('\n', ' ')
+        display_text = raw_text[:150] + "..." if len(raw_text) > 150 else raw_text
         safe_text = escape_markdown(display_text, version=1)
 
         for key, val in mappings:
@@ -113,15 +106,27 @@ async def send_report(bot):
 
     count = len(sentiment)
     averages = {k: v / count for k, v in sums.items()}
-    
+
     colors = {'joy': 'green', 'sadness': 'blue', 'anger': 'red', 'fear': 'purple'}
     plot_files = {}
-    
     for emotion, color in colors.items():
         plot_files[emotion] = generate_plot(plot_data['times'], plot_data[emotion], emotion, color)
 
-    raw_topics = await topic.analyze_daily_topics(sentiment)
-    topics = {k: escape_markdown(v,version=1) for k,v in raw_topics.items()}
+    try:
+        with open('topics.json', 'r', encoding='utf-8') as f:
+            raw_data = json.load(f)
+        emotion_topics = raw_data.get('emotion_topics', {})
+        raw_topics = {
+            'general': raw_data.get('topics', {}).get('topic_0', 'N/A'),
+            'joy':     emotion_topics.get('joy', 'N/A'),
+            'sadness': emotion_topics.get('sadness', 'N/A'),
+            'anger':   emotion_topics.get('anger', 'N/A'),
+            'fear':    emotion_topics.get('fear', 'N/A'),
+        }
+    except (FileNotFoundError, json.JSONDecodeError):
+        raw_topics = {"general": "N/A", "joy": "N/A", "sadness": "N/A", "anger": "N/A", "fear": "N/A"}
+
+    topics = {k: escape_markdown(v, version=1) for k, v in raw_topics.items()}
 
     max_data = {}
     for key, lst in score_lists.items():
@@ -134,10 +139,9 @@ async def send_report(bot):
         "plots": plot_files,
         "topics": topics
     }
-    
+
     with open("daily_report.json", "w", encoding="utf-8") as f:
         json.dump(report_data, f, ensure_ascii=False, indent=4)
-    
 
     try:
         with open("users.json", "r", encoding='utf-8') as f:
@@ -172,6 +176,6 @@ async def send_report(bot):
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
-            print(f"[REPORTER] Report sent to {user.get('username','Unknown')}")
+            print(f"[REPORTER] Report sent to {user.get('username', 'Unknown')}")
         except TelegramError as e:
             print(f"[REPORTER] Failed to send to {user.get('username', 'Unknown')}: {e}")

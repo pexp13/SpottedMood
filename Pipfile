@@ -9,7 +9,8 @@ pysentimiento = "*"
 python-telegram-bot = "*"
 apscheduler = "*"
 matplotlib = "*"
-google-genai = "*"
+spacy = "*"
+scikit-learn = "*"
 
 [dev-packages]
 

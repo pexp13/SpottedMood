@@ -1,6 +1,6 @@
 import telethon_auth as ta
 import msg_extractor as me
-import sentiment
+import analysis
 import handlers
 import reporter
 from telethon import TelegramClient
@@ -56,7 +56,8 @@ async def stop_listening():
 async def daily_job():
     print("[MAIN] Starting to analyze messages and send report...")
     await stop_listening()
-    await sentiment.sentiment_analyze(sentiment_analyzer, hate_analyzer, emotion_analyzer)
+    sentiment_data = await analysis.sentiment_analyze(sentiment_analyzer, hate_analyzer, emotion_analyzer)
+    await analysis.analyze_daily_topics(sentiment_data)
     await reporter.send_report(app.bot)
     print("[MAIN] Emptying messages.json")
     with open("messages.json", "w", encoding="utf-8") as f:
